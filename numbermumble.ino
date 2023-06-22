@@ -1,7 +1,7 @@
 #include <MozziGuts.h>
-#include <Sample.h> // Sample template
+#include <Sample.h>
 #include <EventDelay.h>
-#include <mozzi_rand.h> // for rand()
+#include <mozzi_rand.h>
 #include <LowPassFilter.h>
 #include <samples/white.h>
 #include <samples/no0.h>
@@ -14,27 +14,15 @@
 #include <samples/no7.h>
 #include <samples/no8.h>
 #include <samples/no9.h>
-#define CONTROL_RATE 64
-#define noise_rate 22000
-#define numbers_rate 58000
 
 LowPassFilter lpf;
-
-// for scheduling samples to play
 EventDelay kTriggerDelay;
 
 const byte NUM_PLAYERS = 1;
 const byte NUM_TABLES = 10;
-int volumeWhitenoise = 255;  // Variable to store the volume for whitenoise
-int volumeNumbers = 450;  // Variable to store the volume for numbers
 
-// use: Sample <table_size, update_rate> SampleName (wavetable)
-Sample <white_table_NUM_CELLS, noise_rate> whitenoise(white_table_DATA);
-
-Sample <no0_table_NUM_CELLS, numbers_rate> numbers[NUM_PLAYERS] ={
-Sample <no0_table_NUM_CELLS, numbers_rate> (no0_table_DATA),
-};
-const int8_t * tables[NUM_TABLES] ={
+// Sample Tables
+const int8_t* tables[NUM_TABLES] = {
   no0_table_DATA,
   no1_table_DATA,
   no2_table_DATA,
@@ -44,68 +32,113 @@ const int8_t * tables[NUM_TABLES] ={
   no6_table_DATA,
   no7_table_DATA,
   no8_table_DATA,
-  no9_table_DATA,
+  no9_table_DATA
 };
+
+// Volume Variables
+int volumeWhitenoise = 255;
+int volumeNumbers = 450;
+
+// Sample Objects
+Sample<white_table_NUM_CELLS, noise_rate> whitenoise(white_table_DATA);
+Sample<no0_table_NUM_CELLS, numbers_rate> numbers[NUM_PLAYERS];
+
+// Gain Array
 byte gain[NUM_PLAYERS];
 
-void updateVolume() {
-  volumeWhitenoise = map(analogRead(A3), 0, 1023, 0, 255);
-  volumeNumbers = map(analogRead(A2), 0, 1023, 0, 255);
-}
-void setup(){
+// Function Declarations
+void setup();
+void updateVolume();
+void updateControl();
+void updateAudio();
+void readAnalogInputs();
+void handlePlaybackError();
+
+void setup() {
   startMozzi();
   lpf.setResonance(15);
-  whitenoise.setFreq((float) white_table_SAMPLERATE / (float) white_table_NUM_CELLS); // play at the speed it was recorded
+  whitenoise.setFreq(static_cast<float>(white_table_SAMPLERATE) / static_cast<float>(white_table_NUM_CELLS));
   whitenoise.setLoopingOn();
 
-   for (int i=0;i<NUM_PLAYERS;i++){  // play at the speed they're sampled at
-    (numbers[i]).setFreq((float) no0_table_SAMPLERATE / (float) no0_table_NUM_CELLS);
+  for (int i = 0; i < NUM_PLAYERS; i++) {
+    numbers[i].setFreq(static_cast<float>(no0_table_SAMPLERATE) / static_cast<float>(no0_table_NUM_CELLS));
   }
-  kTriggerDelay.set(2000); // countdown ms, within resolution of CONTROL_RATE
-  updateVolume();  
+
+  kTriggerDelay.set(2000);
+  updateVolume();
 }
 
-byte randomGain(){
-  return rand((byte)120,(byte)255);
+void updateVolume() {
+  int analogA3 = analogRead(A3);
+  int analogA2 = analogRead(A2);
+
+  // Validate analog input values
+  if (analogA3 >= 0 && analogA3 <= 1023) {
+    volumeWhitenoise = map(analogA3, 0, 1023, 0, 255);
+  }
+
+  if (analogA2 >= 0 && analogA2 <= 1023) {
+    volumeNumbers = map(analogA2, 0, 1023, 0, 255);
+  }
 }
 
-
-
-void updateControl(){
+void updateControl() {
   int filterknob = mozziAnalogRead(A0);
   int filtknob = map(filterknob, 0, 1023, 0, 300);
-  static byte player =0;
-  updateVolume();
-      
+
   byte cutoff_freq = filtknob;
-  lpf.setCutoffFreq(cutoff_freq); 
-  if(kTriggerDelay.ready()){
-    gain[player] = randomGain();
-    (numbers[player]).setTable(tables[rand(NUM_TABLES)]);
-    (numbers[player]).start();
-    player++;
-    if(player==NUM_PLAYERS) player = 0;
+  lpf.setCutoffFreq(cutoff_freq);
+
+  if (kTriggerDelay.ready()) {
+    byte player = rand() % NUM_PLAYERS;
+    gain[player] = rand(120, 255);
+    numbers[player].setTable(tables[rand() % NUM_TABLES]);
+
+    // Trigger sample playback and handle any errors
+    if (!numbers[player].start()) {
+      handlePlaybackError();
+    }
+
     kTriggerDelay.start();
   }
-
- }
-
-int updateAudio() {
-  long asig = 0;
-  for (byte i = 0; i < NUM_PLAYERS; i++) {
-    asig += (int)(numbers[i]).next() * gain[i];
-  }
-  asig >>= 9;  // shift into usable range
-
-  //clip any stray peaks to max output range
-  int whitenoiseOutput = whitenoise.next() * volumeWhitenoise / 255;
-  int numbersOutput = (int)asig * volumeNumbers / 64;
-  int mainOutput = whitenoiseOutput + numbersOutput;
-  mainOutput = lpf.next(mainOutput >> 1);
-  return mainOutput;
-
 }
 
-void loop(){
-  audioHook();
+void updateAudio() {
+  long asig = 0;
+
+  for (byte i = 0; i < NUM_PLAYERS; i++) {
+    asig += static_cast<int>(numbers[i].next()) * gain[i];
+  }
+
+  asig >>= 9;
+
+  int whitenoiseOutput = whitenoise.next() * volumeWhitenoise / 255;
+  int numbersOutput = static_cast<int>(asig) * volumeNumbers / 64;
+  int mainOutput = whitenoiseOutput + numbersOutput;
+
+  // Perform signal clipping to prevent exceeding the maximum range
+  if (mainOutput > 32767) {
+    mainOutput = 32767;
+  } else if (mainOutput < -32768) {
+    mainOutput = -32768;
+  }
+
+  mainOutput = lpf.next(mainOutput >> 1);
+
+  audioWrite(mainOutput);
+}
+
+void readAnalogInputs() {
+  updateVolume();
+}
+
+void handlePlaybackError() {
+  Serial.println("Error: Failed to start sample playback");
+  // Additional error handling logic can be added if needed
+}
+
+void loop() {
+  readAnalogInputs();
+  updateControl();
+  updateAudio();
 }
