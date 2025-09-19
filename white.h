@@ -1,17 +1,17 @@
-#ifndef WHITENOISE8192_H_
-#define WHITENOISE8192_H_
+#ifndef WHITE_H_
+#define WHITE_H_
 
 #include <Arduino.h>
 #include "mozzi_pgmspace.h"
 
-#define WHITENOISE8192_NUM_CELLS 8192
-#define WHITENOISE8192_SAMPLERATE 16384
+#define white_table_NUM_CELLS 8192
+#define white_table_SAMPLERATE 16384
 
 /** @ingroup tables
 White noise table.
 */
 
-CONSTTABLE_STORAGE(int8_t) WHITENOISE8192_DATA []  =
+CONSTTABLE_STORAGE(int8_t) white_table_DATA []  =
         {
                 22, -14, 108, 2, -80, -99, 62, -62,
                 -11, -127, -102, -80, -114, -66, -2, 68, -63, -101, 0, -13, 37, 55, 104, 61,
@@ -496,4 +496,4 @@ CONSTTABLE_STORAGE(int8_t) WHITENOISE8192_DATA []  =
                 5, 91, 40, -38, 65, 7, -56, -99, -36, 119, 27, -99, -31, -69, 26, -85, -123,
         };
 
-#endif /* WHITENOISE8192_H_ */
+#endif /* WHITE_H_ */
